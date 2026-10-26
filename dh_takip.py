@@ -287,7 +287,14 @@ def durum_kaydet(durum):
 
 # ---------------- ANA DÖNGÜ ----------------
 
-def sayfayi_isle(url, durum, gorulen, oyunlar, hak_re):
+def ilan_basligi(mesaj, oyunlar, hak_re):
+    oyun = re.search(r"(?im)^\s*(?:oyun\s*ad[iı]|oyun)\s*[:=]\s*(.+)$", mesaj["metin"])
+    oyun = oyun.group(1).strip() if oyun else "İlan"
+    tum_oyunlar = re.compile("|".join(o.pattern for o in oyunlar.values()))
+    return f"{oyun} — Fiyat: {fiyat_bul(mesaj['metin'], tum_oyunlar, hak_re)}"
+
+
+def sayfayi_isle(url, durum, gorulen, oyunlar, hak_re, hepsi=False):
     sayfa_html = sayfa_getir(url)
     bilgi = sayfa_bilgisi(sayfa_html)
     yeni = 0
@@ -297,13 +304,20 @@ def sayfayi_isle(url, durum, gorulen, oyunlar, hak_re):
         gorulen.add(mesaj["id"])
         durum["gorulen"].append(mesaj["id"])
         yeni += 1
+        bulundu = False
         for oyun, oyun_re in oyunlar.items():
             for e in eslesmeleri_bul(mesaj, oyun_re, hak_re):
                 haber_ver(oyun, mesaj, e)
+                bulundu = True
+        if hepsi and not bulundu:
+            # Test modu: eşleşmeyen her yeni mesaj da telefona gelsin
+            baslik = "[TEST] " + ilan_basligi(mesaj, oyunlar, hak_re)
+            log(f"Test bildirimi: {baslik}")
+            telefon_bildirim(baslik, f"Satıcı: {mesaj['kullanici']}\n{mesaj['metin']}", mesaj["link"])
     return bilgi, yeni
 
 
-def tara(durum, oyunlar, hak_re):
+def tara(durum, oyunlar, hak_re, hepsi=False):
     gorulen = set(durum["gorulen"])
 
     if not durum.get("ilk_tarama_yapildi"):
@@ -323,7 +337,7 @@ def tara(durum, oyunlar, hak_re):
 
     url = durum["son_url"]
     while True:
-        bilgi, yeni = sayfayi_isle(url, durum, gorulen, oyunlar, hak_re)
+        bilgi, yeni = sayfayi_isle(url, durum, gorulen, oyunlar, hak_re, hepsi)
         if bilgi["sonraki"]:
             url = bilgi["sonraki"]
             if not url.startswith("http"):
@@ -345,11 +359,7 @@ def son_ilani_goster(url):
             break
         url = sonraki if sonraki.startswith("http") else "https://forum.donanimhaber.com" + sonraki
     mesaj = mesajlari_ayikla(sayfa_html)[-1]
-    oyun = re.search(r"(?im)^\s*(?:oyun\s*ad[iı]|oyun)\s*[:=]\s*(.+)$", mesaj["metin"])
-    oyun = oyun.group(1).strip() if oyun else "Son ilan"
-    tum_oyunlar = re.compile("|".join(f"(?:{d})" for desenler in OYUNLAR.values() for d in desenler))
-    fiyat = fiyat_bul(mesaj["metin"], tum_oyunlar, re.compile(HAK_DESENI))
-    baslik = f"{oyun} — Fiyat: {fiyat}"
+    baslik = ilan_basligi(mesaj, {k: oyun_deseni(k) for k in OYUNLAR}, re.compile(HAK_DESENI))
     log(f"Son ilan ({mesaj['tarih']}): {baslik}")
     log(f"Link: {mesaj['link']}")
     for s in mesaj["metin"].split("\n"):
@@ -366,7 +376,10 @@ def main():
     ap.add_argument("--sifirla", action="store_true", help="kayıtlı durumu sil, baştan tara")
     ap.add_argument("--bildirim-test", action="store_true", help="sadece deneme bildirimi göster")
     ap.add_argument("--son-ilan", action="store_true", help="konudaki en son mesajı bildirim olarak göster")
+    ap.add_argument("--hepsi", action="store_true",
+                    help="test modu: eşleşmeyen yeni mesajları da telefona gönder (TEST_MODU=1 ile de açılır)")
     args = ap.parse_args()
+    hepsi = args.hepsi or os.environ.get("TEST_MODU", "").strip() in ("1", "true", "evet")
 
     if args.bildirim_test:
         telefon_bildirim("DH Takip — deneme", "Telefon bildirimleri çalışıyor 👍", BASLANGIC_URL)
@@ -383,12 +396,13 @@ def main():
     oyunlar = {isim: oyun_deseni(isim) for isim in isimler}
     hak_re = re.compile(HAK_DESENI)
     durum = durum_yukle()
-    log(f"Takip başladı: {', '.join(isimler)} + pri/çift hak | her {args.aralik} sn")
+    log(f"Takip başladı: {', '.join(isimler)} + pri/çift hak | her {args.aralik} sn"
+        + (" | TEST MODU: tüm yeni mesajlar gönderilecek" if hepsi else ""))
 
     while True:
         hata = False
         try:
-            tara(durum, oyunlar, hak_re)
+            tara(durum, oyunlar, hak_re, hepsi)
         except requests.RequestException as e:
             log(f"Bağlantı hatası: {e}")
             hata = True

@@ -42,6 +42,7 @@ jobs:
         run: python dh_takip.py ${{ inputs.test_bildirimi && '--bildirim-test' || '--bir-kez' }}
         env:
           NTFY_KANAL: ${{ secrets.NTFY_KANAL }}
+          TEST_MODU: ${{ vars.TEST_MODU }}   # 1 = eşleşmeyen yeni mesajlar da telefona gelir
           PYTHONIOENCODING: utf-8
 
       - name: Durumu kaydet
