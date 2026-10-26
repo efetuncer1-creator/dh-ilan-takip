@@ -2,8 +2,8 @@
 DonanımHaber ilan takip botu.
 
 Konunun son sayfasını belirli aralıklarla kontrol eder. Yeni bir mesajda
-aranan oyun adı ile hak türü ("pri") aynı ilanda geçerse Windows bildirimi
-gösterir ve fiyatı söyler. Sayfa dolup yeni sayfa açıldığında otomatik
+aranan oyunlardan biri (OYUNLAR) ile hak türü ("pri") aynı ilanda geçerse
+bildirim gönderir ve fiyatı söyler. Sayfa dolup yeni sayfa açıldığında otomatik
 olarak yeni sayfaya geçer.
 
 Kullanım:
@@ -31,14 +31,21 @@ import requests
 BASLANGIC_URL = (
     "https://forum.donanimhaber.com/ps4-ps5-dijital-ortaklik-oyun-ve-hesap-satis-amp-takas-grubu-satilik-ilanlar--109819213-11444"
 )
-OYUN = "Phantom Blade Zero"
-# Satıcıların farklı yazımları (küçük harf, Türkçe karakterler i'ye çevrilmiş halde aranır)
-OYUN_DESENLERI = [
-    r"(?:ph|f)ant[o0]m\W*bl[a4]de?(?:\W*(?:zero|zer0|0|sifir))?",  # phantom blade (zero), fantom blade, phantom blad 0
-    r"(?:ph|f)antomblade\w*",                                      # phantombladezero
-    r"\bpbz\b",                                            # PBZ kısaltması
-    r"\bp\.\s*b\.\s*z\b",                                  # P.B.Z
-]
+# Aranan oyunlar ve satıcıların farklı yazımları
+# (küçük harf, Türkçe karakterler i'ye çevrilmiş halde aranır)
+OYUNLAR = {
+    "Phantom Blade Zero": [
+        r"(?:ph|f)ant[o0]m\W*bl[a4]de?(?:\W*(?:zero|zer0|0|sifir))?",  # phantom blade (zero), fantom blade, phantom blad 0
+        r"(?:ph|f)antomblade\w*",                                      # phantombladezero
+        r"\bpbz\b",                                                    # PBZ kısaltması
+        r"\bp\.\s*b\.\s*z\b",                                          # P.B.Z
+    ],
+    "Modern Warfare 4": [
+        r"modern\W*warfare\W*(?:4(?!\d)|iv\b)",                        # modern warfare 4 / IV, cod: modern warfare 4
+        r"modernwarfare\W*(?:4(?!\d)|iv\b)",                           # modernwarfare4
+        r"\bmw\W*(?:4(?!\d)|iv\b)",                                    # mw4, MW 4, mw-4, MWIV
+    ],
+}
 HAK_DESENI = r"\bpri(?:mary)?\b"      # "pri", "Pri", "PRİ", "primary"
 KONTROL_ARALIGI = 60                  # saniye
 ILK_TARAMA_SAYFA = 3                  # ilk açılışta geriye doğru kaç sayfa taransın
@@ -73,8 +80,8 @@ def normalize(metin):
 
 
 def oyun_deseni(oyun):
-    if oyun == OYUN:
-        return re.compile("|".join(f"(?:{d})" for d in OYUN_DESENLERI))
+    if oyun in OYUNLAR:
+        return re.compile("|".join(f"(?:{d})" for d in OYUNLAR[oyun]))
     kelimeler = normalize(oyun).split()
     # "Phantom Blade Zero" -> phantom\W*blade\W*(zero|0)
     parcalar = [re.escape(k) if k != "zero" else "(?:zero|0)" for k in kelimeler]
@@ -277,7 +284,7 @@ def durum_kaydet(durum):
 
 # ---------------- ANA DÖNGÜ ----------------
 
-def sayfayi_isle(url, durum, gorulen, oyun, oyun_re, hak_re):
+def sayfayi_isle(url, durum, gorulen, oyunlar, hak_re):
     sayfa_html = sayfa_getir(url)
     bilgi = sayfa_bilgisi(sayfa_html)
     yeni = 0
@@ -287,12 +294,13 @@ def sayfayi_isle(url, durum, gorulen, oyun, oyun_re, hak_re):
         gorulen.add(mesaj["id"])
         durum["gorulen"].append(mesaj["id"])
         yeni += 1
-        for e in eslesmeleri_bul(mesaj, oyun_re, hak_re):
-            haber_ver(oyun, mesaj, e)
+        for oyun, oyun_re in oyunlar.items():
+            for e in eslesmeleri_bul(mesaj, oyun_re, hak_re):
+                haber_ver(oyun, mesaj, e)
     return bilgi, yeni
 
 
-def tara(durum, oyun, oyun_re, hak_re):
+def tara(durum, oyunlar, hak_re):
     gorulen = set(durum["gorulen"])
 
     if not durum.get("ilk_tarama_yapildi"):
@@ -306,13 +314,13 @@ def tara(durum, oyun, oyun_re, hak_re):
             url = b["onceki"]
             geri.append(url)
         for u in reversed(geri):
-            sayfayi_isle(u, durum, gorulen, oyun, oyun_re, hak_re)
+            sayfayi_isle(u, durum, gorulen, oyunlar, hak_re)
         durum["ilk_tarama_yapildi"] = True
         log(f"İlk tarama: son {len(geri) + 1} sayfa kontrol edildi.")
 
     url = durum["son_url"]
     while True:
-        bilgi, yeni = sayfayi_isle(url, durum, gorulen, oyun, oyun_re, hak_re)
+        bilgi, yeni = sayfayi_isle(url, durum, gorulen, oyunlar, hak_re)
         if bilgi["sonraki"]:
             url = bilgi["sonraki"]
             if not url.startswith("http"):
@@ -336,7 +344,8 @@ def son_ilani_goster(url):
     mesaj = mesajlari_ayikla(sayfa_html)[-1]
     oyun = re.search(r"(?im)^\s*(?:oyun\s*ad[iı]|oyun)\s*[:=]\s*(.+)$", mesaj["metin"])
     oyun = oyun.group(1).strip() if oyun else "Son ilan"
-    fiyat = fiyat_bul(mesaj["metin"], oyun_deseni(OYUN), re.compile(HAK_DESENI))
+    tum_oyunlar = re.compile("|".join(f"(?:{d})" for desenler in OYUNLAR.values() for d in desenler))
+    fiyat = fiyat_bul(mesaj["metin"], tum_oyunlar, re.compile(HAK_DESENI))
     baslik = f"{oyun} — Fiyat: {fiyat}"
     log(f"Son ilan ({mesaj['tarih']}): {baslik}")
     log(f"Link: {mesaj['link']}")
@@ -348,7 +357,7 @@ def son_ilani_goster(url):
 
 def main():
     ap = argparse.ArgumentParser(description="DonanımHaber ilan takip botu")
-    ap.add_argument("--oyun", default=OYUN, help="aranacak oyun adı")
+    ap.add_argument("--oyun", help="listedekiler yerine sadece bu oyunu ara")
     ap.add_argument("--aralik", type=int, default=KONTROL_ARALIGI, help="kontrol aralığı (sn)")
     ap.add_argument("--bir-kez", action="store_true", help="tek tarama yap ve çık")
     ap.add_argument("--sifirla", action="store_true", help="kayıtlı durumu sil, baştan tara")
@@ -367,15 +376,16 @@ def main():
     if args.sifirla and DURUM_DOSYASI.exists():
         DURUM_DOSYASI.unlink()
 
-    oyun_re = oyun_deseni(args.oyun)
+    isimler = [args.oyun] if args.oyun else list(OYUNLAR)
+    oyunlar = {isim: oyun_deseni(isim) for isim in isimler}
     hak_re = re.compile(HAK_DESENI)
     durum = durum_yukle()
-    log(f"Takip başladı: '{args.oyun}' + pri | her {args.aralik} sn")
+    log(f"Takip başladı: {', '.join(isimler)} + pri | her {args.aralik} sn")
 
     while True:
         hata = False
         try:
-            tara(durum, args.oyun, oyun_re, hak_re)
+            tara(durum, oyunlar, hak_re)
         except requests.RequestException as e:
             log(f"Bağlantı hatası: {e}")
             hata = True
