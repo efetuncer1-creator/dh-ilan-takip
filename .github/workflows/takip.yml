@@ -1,0 +1,47 @@
+name: DH ilan takip
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # en sık 5 dakikada bir (GitHub bazen birkaç dakika geciktirir)
+  workflow_dispatch:        # Actions sekmesinden elle çalıştırmak için
+
+concurrency:
+  group: dh-takip
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  kontrol:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install requests
+
+      # Görülen mesajlar ve son sayfa bilgisi çalıştırmalar arasında cache'te tutulur
+      - name: Durumu geri yükle
+        uses: actions/cache/restore@v4
+        with:
+          path: durum.json
+          key: durum-${{ github.run_id }}
+          restore-keys: durum-
+
+      - name: Son sayfayı kontrol et
+        run: python dh_takip.py --bir-kez
+        env:
+          NTFY_KANAL: ${{ secrets.NTFY_KANAL }}
+          PYTHONIOENCODING: utf-8
+
+      - name: Durumu kaydet
+        if: always() && hashFiles('durum.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: durum.json
+          key: durum-${{ github.run_id }}-${{ github.run_attempt }}
