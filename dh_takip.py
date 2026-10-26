@@ -338,14 +338,11 @@ def son_ilani_goster(url):
     oyun = oyun.group(1).strip() if oyun else "Son ilan"
     fiyat = fiyat_bul(mesaj["metin"], oyun_deseni(OYUN), re.compile(HAK_DESENI))
     baslik = f"{oyun} — Fiyat: {fiyat}"
-    govde = f"{mesaj['kullanici']}: " + " | ".join(
-        s for s in mesaj["metin"].split("\n") if s.strip())[:200]
     log(f"Son ilan ({mesaj['tarih']}): {baslik}")
     log(f"Link: {mesaj['link']}")
     for s in mesaj["metin"].split("\n"):
         if s.strip():
             log(f"   {s}")
-    windows_bildirim(baslik, govde, mesaj["link"])
     telefon_bildirim(baslik, f"Satıcı: {mesaj['kullanici']}\n{mesaj['metin']}", mesaj["link"])
 
 
@@ -360,7 +357,6 @@ def main():
     args = ap.parse_args()
 
     if args.bildirim_test:
-        windows_bildirim("DH Takip — deneme", "Bildirimler çalışıyor 👍", BASLANGIC_URL)
         telefon_bildirim("DH Takip — deneme", "Telefon bildirimleri çalışıyor 👍", BASLANGIC_URL)
         return
 
