@@ -155,6 +155,25 @@ def hak_metni(metin):
     return re.sub(r"\(?pri\w*[\s\-/|]*sec\w*\)?\s*[:=]", " ", normalize(metin))
 
 
+# "Pri-Sec: X", "Hak: X", "Hak türü: X" gibi alan satırları
+HAK_ALANI_RE = re.compile(r"^\W*(?:pri\w*\W*sec\w*|hak(?:\W*t[üu]r[üu])?|hesap\W*t[üu]r[üu])\W*[:=]\s*(.*)$")
+
+
+def pri_satiri_mi(satir, hak_re):
+    n = normalize(satir)
+    # "Diğer hak: pri forumda" satılan hakkı değil, karşı tarafı anlatır
+    if re.match(r"\W*di[gğ]er\W*hak", n):
+        return False
+    m = HAK_ALANI_RE.match(n)
+    if m:
+        # Alanın değerine bak: "Pri", "Primary", "PS5 Pri", "Çift Hak" -> evet; "Secondary hak (pri forumda)" -> hayır
+        return re.match(r"\W*(?:ps\s*\d\W*)?(?:pri|primary|[çc]ift)", m.group(1)) is not None
+    n = hak_metni(n)
+    # "pri hak forumda", "pri bende kalacak" -> sec ilanı
+    n = re.sub(r"\bpri\w*\W*(?:hak\w*\W*)?(?:forumda|bende|kalacak|verilecek)", " ", n)
+    return hak_re.search(n) is not None
+
+
 def satildi_mi(blok):
     ilk_satirlar = " ".join(blok.split("\n")[:2])
     return re.search(r"\bsatildi\b", normalize(ilk_satirlar)) is not None
@@ -187,10 +206,25 @@ def eslesmeleri_bul(mesaj, oyun_re, hak_re):
     tum = mesaj["metin"]
     if not (oyun_re.search(normalize(tum)) and hak_re.search(hak_metni(tum))):
         return sonuc
-    bloklar = ilanlara_bol(tum)
-    for blok in bloklar:
-        if oyun_re.search(normalize(blok)) and hak_re.search(hak_metni(blok)) and not satildi_mi(blok):
-            sonuc.append({"blok": blok, "fiyat": fiyat_bul(blok, oyun_re, hak_re)})
+    for blok in ilanlara_bol(tum):
+        if not oyun_re.search(normalize(blok)) or satildi_mi(blok):
+            continue
+        satirlar = blok.split("\n")
+        i = next((i for i, s in enumerate(satirlar) if pri_satiri_mi(s, hak_re)), None)
+        if i is None:
+            continue
+        # Pri satırından bir sonraki hak alanına kadar olan kısım pri'nin bilgileri
+        j = i + 1
+        while j < len(satirlar) and not HAK_ALANI_RE.match(normalize(satirlar[j])):
+            j += 1
+        bolum = satirlar[i:j]
+        fiyat_satiri = next((s for s in bolum if re.search(r"(?i)fiyat", s)), "")
+        if re.search(r"\bsatildi\b", normalize(bolum[0] + " " + fiyat_satiri)):
+            continue   # "Pri-Sec: Pri / Fiyat: SATILDI"
+        m = re.search(r"(?i)fiyat\w*\s*[:=\-]?\s*(.+)", fiyat_satiri)
+        fiyat = m.group(1).strip() if m and re.search(r"\d", m.group(1)) else fiyat_bul(blok, oyun_re, hak_re)
+        hak = "çift hak" if re.search(CIFT_HAK_DESENI, normalize(bolum[0])) else "pri"
+        sonuc.append({"blok": blok, "fiyat": fiyat, "hak": hak})
     return sonuc
 
 
@@ -249,9 +283,7 @@ def telefon_bildirim(baslik, metin, link):
 
 def haber_ver(oyun, mesaj, eslesme):
     fiyat = eslesme["fiyat"]
-    hak_metin = hak_metni(eslesme["blok"])
-    hak = "pri" if re.search(r"\bpri(?:mary)?\b", hak_metin) else "çift hak"
-    baslik = f"{oyun} ({hak}) — Fiyat: {fiyat}"
+    baslik = f"{oyun} ({eslesme['hak']}) — Fiyat: {fiyat}"
     govde = f"{mesaj['kullanici']}: " + " | ".join(
         s for s in eslesme["blok"].split("\n") if s.strip())[:200]
     log("=" * 60)
