@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "*/5 * * * *"   # en sık 5 dakikada bir (GitHub bazen birkaç dakika geciktirir)
   workflow_dispatch:        # Actions sekmesinden elle çalıştırmak için
+    inputs:
+      test_bildirimi:
+        description: "Sadece telefona deneme bildirimi gönder"
+        type: boolean
+        default: false
 
 concurrency:
   group: dh-takip
@@ -34,7 +39,7 @@ jobs:
           restore-keys: durum-
 
       - name: Son sayfayı kontrol et
-        run: python dh_takip.py --bir-kez
+        run: python dh_takip.py ${{ inputs.test_bildirimi && '--bildirim-test' || '--bir-kez' }}
         env:
           NTFY_KANAL: ${{ secrets.NTFY_KANAL }}
           PYTHONIOENCODING: utf-8
