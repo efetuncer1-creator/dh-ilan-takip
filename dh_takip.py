@@ -383,7 +383,7 @@ def main():
     oyunlar = {isim: oyun_deseni(isim) for isim in isimler}
     hak_re = re.compile(HAK_DESENI)
     durum = durum_yukle()
-    log(f"Takip başladı: {', '.join(isimler)} + pri | her {args.aralik} sn")
+    log(f"Takip başladı: {', '.join(isimler)} + pri/çift hak | her {args.aralik} sn")
 
     while True:
         hata = False
