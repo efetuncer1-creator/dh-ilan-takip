@@ -46,7 +46,8 @@ OYUNLAR = {
         r"\bmw\W*(?:4(?!\d)|iv\b)",                                    # mw4, MW 4, mw-4, MWIV
     ],
 }
-HAK_DESENI = r"\bpri(?:mary)?\b"      # "pri", "Pri", "PRİ", "primary"
+CIFT_HAK_DESENI = r"\b[çc]ift\W*hak"  # "Çift Hak", "cift hak", "çifthak" (pri + sec birlikte)
+HAK_DESENI = r"\bpri(?:mary)?\b|" + CIFT_HAK_DESENI   # "pri", "Pri", "PRİ", "primary" veya çift hak
 KONTROL_ARALIGI = 60                  # saniye
 ILK_TARAMA_SAYFA = 3                  # ilk açılışta geriye doğru kaç sayfa taransın
 
@@ -248,7 +249,9 @@ def telefon_bildirim(baslik, metin, link):
 
 def haber_ver(oyun, mesaj, eslesme):
     fiyat = eslesme["fiyat"]
-    baslik = f"{oyun} (pri) — Fiyat: {fiyat}"
+    hak_metin = hak_metni(eslesme["blok"])
+    hak = "pri" if re.search(r"\bpri(?:mary)?\b", hak_metin) else "çift hak"
+    baslik = f"{oyun} ({hak}) — Fiyat: {fiyat}"
     govde = f"{mesaj['kullanici']}: " + " | ".join(
         s for s in eslesme["blok"].split("\n") if s.strip())[:200]
     log("=" * 60)
